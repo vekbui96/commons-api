@@ -17,6 +17,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:app": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check-app.ps1",
     "verify": "npm run format:check && npm run typecheck && npm run lint && npm run test"
   },
   "dependencies": {

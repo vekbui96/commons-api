@@ -20,10 +20,13 @@ commons-api/
 │  ├─ core/
 │  │  ├─ db.ts          node:sqlite + append-only migrations
 │  │  ├─ kv.ts          key-value store scoped to one app
-│  │  └─ apps.ts        discovers src/apps/<id>/routes.ts
-│  └─ apps/<id>/routes.ts   an app's backend (none yet)
-├─ test/                server tests + a fixture app
-└─ docs/api-contract.md
+│  │  ├─ apps.ts        discovers src/apps/<id>/routes.ts
+│  │  └─ index.ts       the public interface apps import
+│  └─ apps/<id>/        an app's backend (none yet): routes.ts, CLAUDE.md, tests
+├─ eslint/              local lint rule: the wall between apps
+├─ scripts/             check-app.ps1, the scoped check for one app
+├─ test/                server tests, lint-rule tests, a fixture app
+└─ docs/                api-contract.md, templates/app-CLAUDE.md
 ```
 
 - Apps never open their own port, database or process.
@@ -38,7 +41,7 @@ commons-api/
 ```ts
 // src/apps/<id>/routes.ts  →  served at /api/apps/<id>/count
 import { Router } from "express";
-import { defineAppRouter } from "../../core/apps";
+import { defineAppRouter } from "../../core";
 
 export default defineAppRouter(({ kv }) => {
   const router = Router();
@@ -47,15 +50,38 @@ export default defineAppRouter(({ kv }) => {
 });
 ```
 
-Use the same id as the front-end app folder.
+Use the same id as the front-end app folder. Every app folder also gets:
+
+- **A short `CLAUDE.md`** from [`docs/templates/app-CLAUDE.md`](docs/templates/app-CLAUDE.md)
+  (routes, data, rules, how to test; 15 lines or fewer). App detail lives
+  there, never in the root `CLAUDE.md`. A test fails if it is missing.
+- **Its tests** next to its code (`src/apps/<id>/*.test.ts`).
+
+### The wall between apps
+
+- An app imports only its own folder and `src/core` through its public
+  interface, `src/core/index.ts` (`defineAppRouter`, `AppContext`, `AppKv`).
+- Nothing outside an app, core included, imports the app's code; core mounts
+  apps through auto-discovery only.
+- The ESLint rule `commons/app-boundaries` ([`eslint/app-boundaries.js`](eslint/app-boundaries.js))
+  fails the lint on any import that crosses the wall.
+- Each app owns its own tables, prefixed with its id, and its own migrations,
+  and never reads another app's tables.
+- No source imports between apps: a finished app is reused only through its
+  published API or embed, never by copying or importing its code.
 
 ## Local development
 
 ```powershell
 npm install
 npm run dev       # http://127.0.0.1:8790, restarts on change
+npm run check:app -- <id>   # one app: typecheck, lint, its tests (+ core tests if core changed)
 npm run verify    # format check, typecheck, lint, tests (what CI runs)
 ```
+
+Run the scoped `check:app` while working on an app and the full `verify` once
+before committing. CI always runs the full `verify`. `check:app` is a
+PowerShell script (`scripts/check-app.ps1`), for this Windows box.
 
 ## Config (environment variables)
 

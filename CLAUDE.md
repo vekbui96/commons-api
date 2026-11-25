@@ -4,6 +4,12 @@ Commons API: the backend for Commons. The front end is a separate repo,
 `vekbui96/commons` (`D:\projects\commons`). Architecture and the add-an-app
 steps are in `README.md`; the shared contract is `docs/api-contract.md`.
 
+This file is a short index plus the shared rules. **App detail never goes
+here**: each app under `src/apps/<id>/` with backend code has its own short
+`CLAUDE.md` in its folder (template: `docs/templates/app-CLAUDE.md`, 15 lines
+or fewer). A test fails if an app folder lacks one. Read the app's file when
+working on that app.
+
 ## Rules
 
 - **One entry point, apps plug in.** `src/index.ts` is the only process and
@@ -21,9 +27,27 @@ steps are in `README.md`; the shared contract is `docs/api-contract.md`.
 - No auth yet: no write endpoints or `private` app data exposed until it exists.
 - No secrets in the repo; config comes from environment variables.
 
+## The wall between apps
+
+- An app imports only from its own folder and from `src/core/index.ts` (the
+  core's public interface, `../../core`). Never from another app, never from
+  other core modules, `src/server.ts`, `src/config.ts` or `test/`.
+- Core (and anything else outside the app) never imports an app's internals;
+  apps are mounted only by the auto-discovery in `src/core/apps.ts`.
+- ESLint enforces both: `commons/app-boundaries` (`eslint/app-boundaries.js`,
+  tested in `test/app-boundaries.test.ts`). Don't disable it; fix the import.
+- **Data:** each app owns its own tables, prefixed with its id (`<id>_...`), and
+  its own migrations. Apps never read or write another app's tables or KV.
+- **Reuse:** no source imports between apps. A finished app is reused only
+  through its published API or embed, never by copying or importing its code.
+  Code two apps need goes into `src/core` as a deliberate shared feature.
+
 ## Commands
 
-- `npm run verify` before every commit (format check, typecheck, lint, tests; CI runs the same).
+- While working on one app: `npm run check:app -- <id>` (typecheck, lint and
+  tests for `src/apps/<id>/`, plus core lint and tests when core has changes).
+- `npm run verify` once before every commit (format check, typecheck, lint, all
+  tests; CI runs the same, always in full).
 - `npm run format` after scripted or bulk edits.
 
 ## Deploy

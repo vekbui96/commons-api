@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { defineAppRouter } from "../../../../src/core/apps";
+import { defineAppRouter } from "../../../../src/core";
 
 // Test fixture: the smallest possible app router, with a KV round trip.
 export default defineAppRouter(({ id, kv }) => {
