@@ -1,0 +1,37 @@
+# dependencies
+node_modules
+
+# build output
+dist
+*.local
+
+# test / tooling output
+coverage
+playwright-report
+test-results
+*.tsbuildinfo
+
+# server data (SQLite) — never commit
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# env — never commit secrets
+.env
+.env.*
+!.env.example
+
+# editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
+npm-debug.log*
+
+# agent worktrees
+.claude/worktrees/
