@@ -1,33 +1,13 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import type { AddressInfo } from "node:net";
-import type { Server } from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { MIGRATIONS, migrate, openDatabase, schemaVersion } from "../src/core/db";
 import { createKv } from "../src/core/kv";
 import { discoverApps } from "../src/core/apps";
-import { createServer } from "../src/server";
-import { loadConfig, PAGES_ORIGIN } from "../src/config";
-
-const FIXTURE_APPS = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "apps");
-
-const open: Server[] = [];
-afterEach(() => {
-  for (const s of open.splice(0)) s.close();
-});
-
-async function start(appsDir = FIXTURE_APPS, corsOrigins = loadConfig({ NODE_ENV: "test" }).corsOrigins) {
-  const db = openDatabase(":memory:");
-  const apps = await discoverApps(appsDir);
-  const listener = createServer({ db, corsOrigins, apps }).listen(0, "127.0.0.1");
-  open.push(listener);
-  await new Promise((resolve) => listener.once("listening", resolve));
-  const { port } = listener.address() as AddressInfo;
-  return { base: `http://127.0.0.1:${port}`, db };
-}
+import { loadConfig, PAGES_ORIGIN, PRIVATE_ORIGIN } from "../src/config";
+import { FIXTURE_APPS, OWNER_HEADERS, TOKEN, start } from "./helpers";
 
 describe("GET /api/health", () => {
   it("reports ok with the schema version", async () => {
@@ -60,21 +40,27 @@ describe("CORS", () => {
   it("rejects other origins", async () => {
     const { base } = await start();
     const res = await fetch(`${base}/api/health`, { headers: { Origin: "https://evil.example" } });
+    expect(res.status).toBe(403);
     expect(res.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   it("allows localhost only outside production", () => {
     const matches = (origins: (string | RegExp)[], o: string) =>
       origins.some((x) => (typeof x === "string" ? x === o : x.test(o)));
-    expect(matches(loadConfig({ NODE_ENV: "development" }).corsOrigins, "http://localhost:5180")).toBe(true);
-    expect(matches(loadConfig({ NODE_ENV: "production" }).corsOrigins, "http://localhost:5180")).toBe(false);
+    expect(matches(loadConfig({ NODE_ENV: "development" }).allowedOrigins, "http://localhost:5180")).toBe(
+      true,
+    );
+    expect(matches(loadConfig({ NODE_ENV: "production" }).allowedOrigins, "http://localhost:5180")).toBe(
+      false,
+    );
+    expect(loadConfig({ NODE_ENV: "production" }).allowedOrigins).toEqual([PRIVATE_ORIGIN, PAGES_ORIGIN]);
   });
 });
 
 describe("app routers", () => {
   it("mounts each app's router under /api/apps/<id>/", async () => {
     const { base } = await start();
-    const res = await fetch(`${base}/api/apps/echo/ping`);
+    const res = await fetch(`${base}/api/apps/echo/ping`, { headers: OWNER_HEADERS });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ app: "echo", pong: true });
     // Not at the root.
@@ -83,14 +69,33 @@ describe("app routers", () => {
 
   it("gives each app its own KV scope", async () => {
     const { base, db } = await start();
-    await fetch(`${base}/api/apps/echo/note`, {
+    const put = await fetch(`${base}/api/apps/echo/note`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        ...OWNER_HEADERS,
+        "Content-Type": "application/json",
+        Origin: PAGES_ORIGIN,
+        "X-Commons-Token": TOKEN,
+      },
       body: JSON.stringify({ text: "hi" }),
     });
-    expect(await (await fetch(`${base}/api/apps/echo/note`)).json()).toEqual({ note: { text: "hi" } });
+    expect(put.status).toBe(200);
+    const got = await fetch(`${base}/api/apps/echo/note`, { headers: OWNER_HEADERS });
+    expect(await got.json()).toEqual({ note: { text: "hi" } });
     expect(createKv(db, "echo").get("note")).toEqual({ text: "hi" });
     expect(createKv(db, "other").get("note")).toBeUndefined();
+  });
+
+  it("finds compiled routes.js files (the production build)", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "commons-dist-"));
+    try {
+      mkdirSync(path.join(dir, "built"));
+      writeFileSync(path.join(dir, "built", "routes.js"), "export default () => null;");
+      const apps = await discoverApps(dir);
+      expect(apps.map((a) => a.id)).toEqual(["built"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("finds no apps in a missing folder", async () => {

@@ -20,12 +20,20 @@ working on that app.
 - Storage is the built-in `node:sqlite`. **No better-sqlite3** or other native
   modules: native builds on server-pc are a pain.
 - Migrations in `src/core/db.ts` are append-only.
-- CORS stays an allowlist: `https://vekbui96.github.io`, plus localhost outside production.
+- **Security lives in `src/core/security.ts`** (contract: "Security"). Origins
+  are an allowlist (`https://server-pc.tail0e4194.ts.net:8445`,
+  `https://vekbui96.github.io`, localhost outside production); a present,
+  disallowed `Origin` is refused. `/api/health` is open; `/api/session` and
+  everything under `/api/apps/` need the owner's Tailscale identity; writes
+  also need an allowed Origin and the CSRF token. Apps never do their own auth
+  and never weaken these checks.
+- The server listens on 127.0.0.1 only; that is why the identity headers can be
+  trusted. Never bind it elsewhere. The owner login is config (env or
+  `tailscale status`), never in the repo.
 - **Contract changes go in both repos.** Edit `docs/api-contract.md` here and in
   `D:\projects\commons\docs\api-contract.md` together, and update the front
   end's `src/api/client.ts` to match.
-- No auth yet: no write endpoints or `private` app data exposed until it exists.
-- No secrets in the repo; config comes from environment variables.
+- No secrets or emails in the repo; config comes from environment variables.
 
 ## The wall between apps
 
@@ -52,7 +60,15 @@ working on that app.
 
 ## Deploy
 
-- **Not deployed, and not to be deployed without Ve asking.** No NSSM service,
-  no Funnel, nothing under `D:\services`. The plan is in `README.md`.
+- **Deployed, tailnet only, never Funnel.** NSSM service `commons-api` runs
+  `node dist\index.js` from `D:\services\commons-api` on `127.0.0.1:8790`;
+  `tailscale serve` puts it at `https://server-pc.tail0e4194.ts.net:8445/api/`
+  (the private front end is `/` there, from `D:\services\commons-web`). Data:
+  `D:\services\commons-api\data\commons.db`. Details: `README.md`, "Deploy".
+- Deploy only when Ve asks; pushing `main` deploys nothing. Deploy with
+  `npm run deploy` from an elevated shell (verify, build, swap, restart, health
+  check, auto-rollback). Roll back with `npm run deploy -- -Rollback`.
+- Never `tailscale serve reset` / `funnel reset`, never put 8445 on Funnel, never
+  touch another port's handlers or other services on the box.
 - Every GitHub comment an agent posts as vekbui96 starts with `<!-- claude-agent -->`
   on its own line.

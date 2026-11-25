@@ -1,26 +1,28 @@
-import cors from "cors";
-import express, { type Express } from "express";
+import express, { type Express, type RequestHandler } from "express";
 import type { DatabaseSync } from "node:sqlite";
 import { schemaVersion } from "./core/db";
 import { createKv } from "./core/kv";
 import { appPrefix, type DiscoveredApp } from "./core/apps";
+import { originGuard, requireCsrf, requireOwner, type SecurityConfig } from "./core/security";
 
 export interface ServerDeps {
   db: DatabaseSync;
-  corsOrigins: (string | RegExp)[];
+  security: SecurityConfig;
   apps: DiscoveredApp[];
 }
 
 /**
- * Builds the single Express app: core routes first, then every discovered app
- * router mounted under /api/apps/<id>/.
+ * Builds the single Express app: the origin guard, the open health check, then
+ * the owner-only routes (/api/session and every app router under /api/apps/<id>/).
  */
-export function createServer({ db, corsOrigins, apps }: ServerDeps): Express {
+export function createServer({ db, security, apps }: ServerDeps): Express {
   const server = express();
   server.disable("x-powered-by");
-  server.use(cors({ origin: corsOrigins }));
-  server.use(express.json({ limit: "1mb" }));
+  // Behind tailscale serve on loopback; never trust X-Forwarded-* for req.ip etc.
+  server.set("trust proxy", false);
+  server.use("/api", originGuard(security));
 
+  // Open: the front end uses it to decide whether private features show.
   server.get("/api/health", (_req, res) => {
     let dbOk = true;
     let version: number | null = null;
@@ -38,6 +40,17 @@ export function createServer({ db, corsOrigins, apps }: ServerDeps): Express {
     });
   });
 
+  const owner: RequestHandler[] = [requireOwner(security), requireCsrf(security)];
+
+  server.get("/api/session", ...owner, (req, res) => {
+    res.set("Cache-Control", "no-store").json({
+      ok: true,
+      login: req.headers["tailscale-user-login"],
+      csrfToken: security.csrfToken,
+    });
+  });
+
+  server.use("/api/apps", ...owner, express.json({ limit: "1mb" }));
   for (const app of apps) {
     const router = app.createRouter({ id: app.id, kv: createKv(db, app.id), db });
     server.use(appPrefix(app.id), router);

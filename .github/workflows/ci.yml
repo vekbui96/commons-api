@@ -24,11 +24,19 @@ jobs:
       - run: npm ci
       - name: Verify (format, typecheck, lint, test)
         run: npm run verify
-      - name: Boot smoke test
+      - name: Build (plain JS in dist/)
+        run: npm run build
+      - name: Boot smoke test (compiled, production mode)
         run: |
-          COMMONS_PORT=8790 COMMONS_DB_PATH="$RUNNER_TEMP/commons.db" npm start &
+          NODE_ENV=production COMMONS_PORT=8790 COMMONS_DB_PATH="$RUNNER_TEMP/commons.db" node dist/index.js &
           for i in $(seq 1 20); do
-            curl -fsS http://127.0.0.1:8790/api/health && exit 0
+            if curl -fsS http://127.0.0.1:8790/api/health; then
+              # owner-only routes refuse a request with no tailnet identity
+              code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8790/api/session)
+              echo; echo "/api/session -> $code"
+              [ "$code" != "200" ] && exit 0
+              exit 1
+            fi
             sleep 1
           done
           exit 1

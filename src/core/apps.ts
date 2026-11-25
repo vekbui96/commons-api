@@ -34,7 +34,10 @@ export interface DiscoveredApp {
 
 const ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/** Finds every `<appsDir>/<id>/routes.ts` and imports its router factory. */
+/**
+ * Finds every `<appsDir>/<id>/routes.ts` (or `routes.js` in the compiled build)
+ * and imports its router factory.
+ */
 export async function discoverApps(appsDir: string): Promise<DiscoveredApp[]> {
   if (!existsSync(appsDir)) return [];
   const apps: DiscoveredApp[] = [];
@@ -44,14 +47,16 @@ export async function discoverApps(appsDir: string): Promise<DiscoveredApp[]> {
     .sort();
 
   for (const id of folders) {
-    const file = path.join(appsDir, id, "routes.ts");
-    if (!existsSync(file)) continue;
+    const file = ["routes.ts", "routes.js"]
+      .map((name) => path.join(appsDir, id, name))
+      .find((candidate) => existsSync(candidate));
+    if (!file) continue;
     if (!ID_PATTERN.test(id)) {
       throw new Error(`server app folder "${id}" must be kebab-case`);
     }
     const mod = (await import(pathToFileURL(file).href)) as { default?: unknown };
     if (typeof mod.default !== "function") {
-      throw new Error(`server/src/apps/${id}/routes.ts must default-export a router factory`);
+      throw new Error(`apps/${id}/routes must default-export a router factory`);
     }
     apps.push({ id, createRouter: mod.default as AppRouterFactory });
   }

@@ -2,7 +2,7 @@
 
 Backend for the `<id>` app (front end: `src/apps/<id>/` in `vekbui96/commons`). Mounted at `/api/apps/<id>/`.
 
-- **Routes:** `GET /<path>`: what it returns. (One line per route; no write routes until auth exists.)
+- **Routes:** `GET /<path>`: what it returns. (One line per route. Core makes every route owner-only and checks CSRF on writes.)
 - **Data:** KV keys `<key>` (what they hold). Tables, if any: `<id>_<name>` only.
 - **Migrations:** none (KV only). Tables need per-app migrations, which core adds with the first app that wants one; they stay this app's own and append-only.
 - **Rules:** app-specific rules and gotchas. Shared rules live in the root `CLAUDE.md`.
