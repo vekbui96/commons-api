@@ -17,6 +17,23 @@ export interface AppContext {
   kv: AppKv;
   /** The shared database, for apps that outgrow the KV store. Prefix any tables with the app id. */
   db: DatabaseSync;
+  /**
+   * Reads a `COMMONS_*` environment variable (trimmed; empty or unset is
+   * undefined), so apps get their config without importing src/config.ts.
+   * Read at call time. Any other name throws: apps never read arbitrary env.
+   */
+  env(name: string): string | undefined;
+}
+
+const ENV_NAME = /^COMMONS_[A-Z0-9_]+$/;
+
+/** The `env` accessor apps get in their context, over a given environment. */
+export function createEnvReader(source: NodeJS.ProcessEnv = process.env): AppContext["env"] {
+  return (name) => {
+    if (!ENV_NAME.test(name)) throw new Error(`apps may only read COMMONS_* variables (asked for ${name})`);
+    const value = source[name]?.trim();
+    return value ? value : undefined;
+  };
 }
 
 /** An app's server module (server/src/apps/<id>/routes.ts) default-exports one of these. */

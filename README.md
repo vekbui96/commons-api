@@ -27,7 +27,7 @@ commons-api/
 │  │  ├─ security.ts    origin allowlist, owner identity, CSRF on writes
 │  │  ├─ tailscale.ts   owner login + tailnet IPs from tailscale, tailscaled peer check
 │  │  └─ index.ts       the public interface apps import
-│  └─ apps/<id>/        an app's backend: routes.ts, CLAUDE.md, tests (server-map)
+│  └─ apps/<id>/        an app's backend: routes.ts, CLAUDE.md, tests (server-map, profiles)
 ├─ eslint/              local lint rule: the wall between apps
 ├─ scripts/             check-app.ps1 (one app), build.mjs (dist/), deploy.ps1
 ├─ test/                server tests, lint-rule tests, a fixture app
@@ -37,6 +37,8 @@ commons-api/
 - Apps never open their own port, database or process.
 - `src/apps/<id>/routes.ts` default-exports `defineAppRouter((ctx) => router)`.
   The entry point finds it on start and mounts it under `/api/apps/<id>/`.
+- `ctx.env(name)` reads a `COMMONS_*` environment variable (trimmed, empty is
+  `undefined`; any other name throws), so apps never import `src/config.ts`.
 - `ctx` has `id`, `kv` (key-value store scoped to the app) and `db` (the shared
   database; prefix any tables an app adds with its id).
 - Core routes: `GET /api/health` (open) and `GET /api/session` (owner only:
@@ -95,15 +97,17 @@ PowerShell script (`scripts/check-app.ps1`), for this Windows box.
 
 ## Config (environment variables)
 
-| Variable              | Default                          | Notes                                                                                                                  |
-| --------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `COMMONS_PORT`        | `8790`                           | 8787/8788/8080/8200 are taken on server-pc                                                                             |
-| `COMMONS_HOST`        | `127.0.0.1`                      | loopback only; the identity headers are trusted only because of this                                                   |
-| `COMMONS_DB_PATH`     | `data/commons.db`                | `data/` is gitignored; `identity.json` is cached next to it                                                            |
-| `NODE_ENV`            | unset                            | `production`: no localhost origins, Host must be the 8445 name, owner read from tailscale, TCP peer must be tailscaled |
-| `COMMONS_OWNER_LOGIN` | from `tailscale status`          | override the owner's tailnet login (never commit it)                                                                   |
-| `COMMONS_PUBLIC_HOST` | the 8445 host in production      | the `Host` that identity routes require                                                                                |
-| `COMMONS_ARCH_PATH`   | `D:\hub\state\architecture.json` | `server-map`: the hub's architecture map, read-only                                                                    |
+| Variable                 | Default                          | Notes                                                                                                                                                                                               |
+| ------------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `COMMONS_PORT`           | `8790`                           | 8787/8788/8080/8200 are taken on server-pc                                                                                                                                                          |
+| `COMMONS_HOST`           | `127.0.0.1`                      | loopback only; the identity headers are trusted only because of this                                                                                                                                |
+| `COMMONS_DB_PATH`        | `data/commons.db`                | `data/` is gitignored; `identity.json` is cached next to it                                                                                                                                         |
+| `NODE_ENV`               | unset                            | `production`: no localhost origins, Host must be the 8445 name, owner read from tailscale, TCP peer must be tailscaled                                                                              |
+| `COMMONS_OWNER_LOGIN`    | from `tailscale status`          | override the owner's tailnet login (never commit it)                                                                                                                                                |
+| `COMMONS_PUBLIC_HOST`    | the 8445 host in production      | the `Host` that identity routes require                                                                                                                                                             |
+| `COMMONS_ARCH_PATH`      | `D:\hub\state\architecture.json` | `server-map`: the hub's architecture map, read-only                                                                                                                                                 |
+| `COMMONS_PROFILES_REPO`  | `vekbui96/commons-profiles`      | `profiles`: the repo `POST /publish` writes `profiles.json` to (branch `main`)                                                                                                                      |
+| `COMMONS_PROFILES_TOKEN` | unset                            | `profiles`: **secret**, fine-grained GitHub token (Contents read/write on that repo only). Unset: publish answers `503`. Set with `npm run deploy -- -SetProfilesToken` (elevated); deploys keep it |
 
 ## Database
 
@@ -148,6 +152,11 @@ It puts `dist.prev` back (with its `package*.json`, reinstalling dependencies if
 they differ), restarts and health-checks; the failed build stays in `dist.bad`.
 Deploy and rollback never touch the database; migrations are append-only, so an
 older build still opens it.
+
+**Secrets:** `npm run deploy -- -SetProfilesToken` (elevated) prompts for
+`COMMONS_PROFILES_TOKEN`, stores it in the service's `AppEnvironmentExtra`
+(keeping the other variables) and restarts. Every deploy keeps extra variables
+it does not manage and prints variable names only, never values.
 
 **Check it:**
 

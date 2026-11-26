@@ -178,6 +178,145 @@ only the top level: `schema === 1`, `nodes` and `edges` arrays):
 }
 ```
 
+### `profiles`: visitor profiles editor (owner only)
+
+The private editor for the visitor profiles the **public** site reads. Edits
+are a **draft** on server-pc until **published**: publishing writes
+`profiles.json` to the public data repo `vekbui96/commons-profiles` (branch
+`main`), which Pages serves at
+`https://vekbui96.github.io/commons-profiles/profiles.json`. Profiles are
+tailoring, never access control.
+
+All under `/api/apps/profiles/`. Every answer has `Cache-Control: no-store`.
+Identity, Origin and CSRF errors (see Security) come first; writes need the
+CSRF token like any app write.
+
+**Profile** (the iteration-1 shape, keys in this order):
+
+```json
+{ "id": "tammy", "name": "Tammy", "aliases": [], "inheritsGuest": true, "apps": ["units", "cardlens"] }
+```
+
+**Rules** (the same as the front end's `parseProfiles`, plus limits):
+
+- `id`: kebab-case (`^[a-z0-9]+(-[a-z0-9]+)*$`), 32 characters or fewer; fixed
+  once created (rename = delete + create).
+- `name`: 1-40 characters after trimming. `aliases`: up to 10 names, each 1-40
+  characters after trimming (stored trimmed).
+- Every id, name and alias, normalised (NFD, accents dropped, lower case,
+  trimmed, spaces collapsed), picks **one** profile across all profiles, and
+  none may be `guest` (reserved for the guest view). Repeats inside one profile
+  are fine.
+- `apps`: up to 50 unique kebab-case app ids (64 characters or fewer). Plain
+  strings: the API does not check them against the registry; the UI offers
+  public apps only.
+- At most 100 profiles. `guest` is not a profile and cannot be deleted.
+
+**Draft state** (`GET /profiles`, and the answer to every successful edit):
+
+```json
+{
+  "ok": true,
+  "revision": 3,
+  "updatedAt": "2026-11-25T18:00:00.000Z",
+  "dirty": true,
+  "guest": { "apps": ["portfolio"] },
+  "profiles": [
+    { "id": "tammy", "name": "Tammy", "aliases": [], "inheritsGuest": true, "apps": ["units", "cardlens"] }
+  ]
+}
+```
+
+- `revision` goes up by one on each edit that changes the content (an edit
+  that changes nothing keeps it).
+- `dirty`: the draft differs from what was last published.
+- First start seeds guest `["portfolio"]` and `tammy` (the iteration-1 file
+  already in the data repo), recorded as published, so `dirty` starts `false`.
+
+| Method + path          | Body                                       | Success                                                       |
+| ---------------------- | ------------------------------------------ | ------------------------------------------------------------- |
+| `GET /profiles`        |                                            | `200` draft state                                             |
+| `PUT /profiles/:id`    | `{ name, aliases?, inheritsGuest?, apps }` | `201` (created, appended) or `200` (replaced in place): state |
+| `DELETE /profiles/:id` |                                            | `200` draft state                                             |
+| `PUT /guest`           | `{ apps }`                                 | `200` draft state                                             |
+| `GET /export`          |                                            | `200` the exact file `POST /publish` would write (below)      |
+| `GET /publish`         |                                            | `200` publish status                                          |
+| `POST /publish`        | optional `{ "revision": n }`               | `200` publish status + `unchanged`                            |
+
+- `PUT /profiles/:id`: `aliases` defaults to `[]`, `inheritsGuest` to `true`;
+  an `id` in the body must equal the URL's; unknown body keys are ignored.
+
+**Export** (`GET /export`): `Content-Type: application/json; charset=utf-8`,
+`Content-Disposition: attachment; filename="profiles.json"`. The body is the
+file exactly (2-space JSON, trailing newline):
+
+```json
+{
+  "version": 1,
+  "revision": 3,
+  "guest": { "apps": ["portfolio"] },
+  "profiles": [
+    { "id": "tammy", "name": "Tammy", "aliases": [], "inheritsGuest": true, "apps": ["units", "cardlens"] }
+  ]
+}
+```
+
+It is the iteration-1 shape that `parseProfiles` accepts, plus a top-level
+`revision` (the draft revision published), which `parseProfiles` ignores.
+**Readers of the file must ignore unknown top-level keys.** `publishedAt` and
+the commit live in the API's publish status, not the file.
+
+**Publish status** (`GET /publish`; `POST /publish` adds `"unchanged": bool`):
+
+```json
+{
+  "ok": true,
+  "configured": true,
+  "repo": "vekbui96/commons-profiles",
+  "path": "profiles.json",
+  "branch": "main",
+  "url": "https://vekbui96.github.io/commons-profiles/profiles.json",
+  "revision": 3,
+  "dirty": false,
+  "lastPublished": { "revision": 3, "publishedAt": "2026-11-25T18:05:00.000Z", "commitSha": "<40 hex>" },
+  "lastAttemptAt": "2026-11-25T18:05:00.000Z",
+  "lastError": null
+}
+```
+
+- `configured`: the server has a GitHub token. `false` means `POST /publish`
+  answers `503`; offer the export download instead. `repo`/`url` are `null`
+  when the configured repo name is malformed.
+- `lastPublished`: `null` until the API has published once. `commitSha` may be
+  `null` when the file already held exactly these bytes (no commit was made;
+  `unchanged: true`).
+- `lastError`: the last failed attempt, `{ "error": "<reason>", "status"?: <http>, "at" }`,
+  cleared by the next success. Reasons: `github_unauthorized` (401),
+  `github_forbidden` (403: token lacks access, or rate limit),
+  `github_not_found` (404: repo or branch not reachable with this token),
+  `github_conflict` (409/422 after one retry), `github_error`,
+  `github_unreachable` (network or 15 s timeout).
+- `POST /publish` with `revision`: publishes only if it equals the draft
+  revision (what the UI is showing). Publishing is plain request/response:
+  the answer comes when GitHub has answered. The site picks the new file up
+  once Pages rebuilds (usually within a minute or two).
+
+**Errors** (body `{ "ok": false, "error": "<code>", ... }`):
+
+| Status | `error`                  | When                                                                          |
+| ------ | ------------------------ | ----------------------------------------------------------------------------- |
+| `400`  | `invalid_profile`        | the body or `:id` breaks a profile rule; `problems: string[]` lists them all  |
+| `400`  | `invalid_profiles`       | the edit would break a cross-profile rule (name clash); `problems: string[]`  |
+| `400`  | `invalid_guest`          | `PUT /guest` body is not `{ apps: [...] }` with valid ids; `problems`         |
+| `400`  | `guest_reserved`         | `PUT` or `DELETE /profiles/guest`                                             |
+| `404`  | `profile_not_found`      | `DELETE` of an id that does not exist                                         |
+| `409`  | `revision_mismatch`      | `POST /publish` with a stale `revision`; body includes the current `revision` |
+| `409`  | `publish_in_progress`    | another publish is still running                                              |
+| `502`  | `publish_failed`         | GitHub refused or did not answer; `reason` (as `lastError.error`), `status`?  |
+| `503`  | `publish_not_configured` | no GitHub token on the server (or a malformed repo name)                      |
+
+`problems` strings are for display, not for matching.
+
 ## Key-value storage
 
 - Each app gets a key-value store on the server, scoped to its id (JSON values).

@@ -24,9 +24,14 @@
   npm run deploy                       # verify, build, deploy, health check
   npm run deploy -- -Serve             # also (re)apply the 8445 serve handlers
   npm run deploy -- -Rollback          # put dist.prev back and restart
+  npm run deploy -- -SetProfilesToken  # prompt for COMMONS_PROFILES_TOKEN, keep it on the service, restart
+
+  Every deploy keeps extra service variables it does not manage (such as
+  COMMONS_PROFILES_TOKEN) and prints variable names only, never values.
 #>
 param(
   [switch]$Rollback,
+  [switch]$SetProfilesToken,
   [switch]$Serve,
   [switch]$SkipVerify,
   [switch]$AllowDirty,
@@ -110,12 +115,48 @@ function Install-Service {
     @('AppRotateBytes', '10485760')
   )
   foreach ($s in $settings) { Exec "nssm set $($s[0])" { & $nssm set $service @s | Out-Null } }
-  Exec 'nssm set AppEnvironmentExtra' {
-    & $nssm set $service AppEnvironmentExtra `
-      'NODE_ENV=production' "COMMONS_PORT=$port" 'COMMONS_HOST=127.0.0.1' `
-      "COMMONS_DB_PATH=$(Join-Path $Target 'data\commons.db')" `
-      'COMMONS_ARCH_PATH=D:\hub\state\architecture.json' | Out-Null
-  }
+  $managed = @(
+    'NODE_ENV=production', "COMMONS_PORT=$port", 'COMMONS_HOST=127.0.0.1',
+    "COMMONS_DB_PATH=$(Join-Path $Target 'data\commons.db')",
+    'COMMONS_ARCH_PATH=D:\hub\state\architecture.json'
+  )
+  Set-ServiceEnv $managed
+}
+
+function Get-ServiceEnv {
+  # NSSM prints UTF-16; strip NULs. Never print these lines: they can hold secrets.
+  if (-not (Get-Service $service -ErrorAction SilentlyContinue)) { return @() }
+  $raw = & $nssm get $service AppEnvironmentExtra 2>$null
+  return @($raw | ForEach-Object { ($_ -replace "`0", '').Trim() } | Where-Object { $_ -match '^[A-Za-z_][A-Za-z0-9_]*=' })
+}
+
+function Write-ServiceEnv([string[]]$all) {
+  Exec 'nssm set AppEnvironmentExtra' { & $nssm set $service AppEnvironmentExtra @all | Out-Null }
+  Say "service env: $((($all | ForEach-Object { ($_ -split '=', 2)[0] }) -join ', '))"
+}
+
+function Set-ServiceEnv([string[]]$entries) {
+  # Sets these entries and keeps every other extra variable already on the service
+  # (e.g. COMMONS_PROFILES_TOKEN from -SetProfilesToken), so a deploy never drops a secret.
+  $keys = @($entries | ForEach-Object { ($_ -split '=', 2)[0] })
+  $kept = @(Get-ServiceEnv | Where-Object { $keys -notcontains ($_ -split '=', 2)[0] })
+  Write-ServiceEnv (@($entries) + $kept)
+}
+
+function Set-ProfilesToken {
+  # Prompts (never a parameter): the value stays out of history, scrollback and transcripts.
+  if (-not (Get-Service $service -ErrorAction SilentlyContinue)) { Fail "service $service is not installed; deploy first" }
+  $secure = Read-Host -AsSecureString -Prompt 'COMMONS_PROFILES_TOKEN (Enter alone removes it)'
+  $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+  try { $token = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr).Trim() }
+  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+  if ($token -match '\s') { Fail 'the token contains whitespace' }
+  $all = @(Get-ServiceEnv | Where-Object { ($_ -split '=', 2)[0] -ne 'COMMONS_PROFILES_TOKEN' })
+  if ($token) { $all += "COMMONS_PROFILES_TOKEN=$token" }
+  $token = $null
+  Write-ServiceEnv $all
+  Stop-Api
+  if (-not (Restart-Api 'profiles token')) { Fail "$healthUrl is not healthy after the restart; see $logDir\commons-api.err.log" }
 }
 
 function Set-Serve {
@@ -163,6 +204,7 @@ function Invoke-Rollback {
 }
 
 if ($Rollback) { Invoke-Rollback; exit 0 }
+if ($SetProfilesToken) { Set-ProfilesToken; exit 0 }
 
 # ---------------------------------------------------------------- build
 Set-Location $repo

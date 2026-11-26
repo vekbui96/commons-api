@@ -2,20 +2,22 @@ import express, { type Express, type RequestHandler } from "express";
 import type { DatabaseSync } from "node:sqlite";
 import { schemaVersion } from "./core/db";
 import { createKv } from "./core/kv";
-import { appPrefix, type DiscoveredApp } from "./core/apps";
+import { appPrefix, createEnvReader, type DiscoveredApp } from "./core/apps";
 import { originGuard, requireCsrf, requireOwner, type SecurityConfig } from "./core/security";
 
 export interface ServerDeps {
   db: DatabaseSync;
   security: SecurityConfig;
   apps: DiscoveredApp[];
+  /** What apps read through ctx.env (COMMONS_* only). Defaults to process.env. */
+  env?: NodeJS.ProcessEnv;
 }
 
 /**
  * Builds the single Express app: the origin guard, the open health check, then
  * the owner-only routes (/api/session and every app router under /api/apps/<id>/).
  */
-export function createServer({ db, security, apps }: ServerDeps): Express {
+export function createServer({ db, security, apps, env = process.env }: ServerDeps): Express {
   const server = express();
   server.disable("x-powered-by");
   // Behind tailscale serve on loopback; never trust X-Forwarded-* for req.ip etc.
@@ -51,8 +53,9 @@ export function createServer({ db, security, apps }: ServerDeps): Express {
   });
 
   server.use("/api/apps", ...owner, express.json({ limit: "1mb" }));
+  const readEnv = createEnvReader(env);
   for (const app of apps) {
-    const router = app.createRouter({ id: app.id, kv: createKv(db, app.id), db });
+    const router = app.createRouter({ id: app.id, kv: createKv(db, app.id), db, env: readEnv });
     server.use(appPrefix(app.id), router);
   }
 
