@@ -113,7 +113,8 @@ function Install-Service {
   Exec 'nssm set AppEnvironmentExtra' {
     & $nssm set $service AppEnvironmentExtra `
       'NODE_ENV=production' "COMMONS_PORT=$port" 'COMMONS_HOST=127.0.0.1' `
-      "COMMONS_DB_PATH=$(Join-Path $Target 'data\commons.db')" | Out-Null
+      "COMMONS_DB_PATH=$(Join-Path $Target 'data\commons.db')" `
+      'COMMONS_ARCH_PATH=D:\hub\state\architecture.json' | Out-Null
   }
 }
 

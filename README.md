@@ -27,7 +27,7 @@ commons-api/
 │  │  ├─ security.ts    origin allowlist, owner identity, CSRF on writes
 │  │  ├─ tailscale.ts   owner login + tailnet IPs from tailscale, tailscaled peer check
 │  │  └─ index.ts       the public interface apps import
-│  └─ apps/<id>/        an app's backend (none yet): routes.ts, CLAUDE.md, tests
+│  └─ apps/<id>/        an app's backend: routes.ts, CLAUDE.md, tests (server-map)
 ├─ eslint/              local lint rule: the wall between apps
 ├─ scripts/             check-app.ps1 (one app), build.mjs (dist/), deploy.ps1
 ├─ test/                server tests, lint-rule tests, a fixture app
@@ -95,14 +95,15 @@ PowerShell script (`scripts/check-app.ps1`), for this Windows box.
 
 ## Config (environment variables)
 
-| Variable              | Default                     | Notes                                                                                                                  |
-| --------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `COMMONS_PORT`        | `8790`                      | 8787/8788/8080/8200 are taken on server-pc                                                                             |
-| `COMMONS_HOST`        | `127.0.0.1`                 | loopback only; the identity headers are trusted only because of this                                                   |
-| `COMMONS_DB_PATH`     | `data/commons.db`           | `data/` is gitignored; `identity.json` is cached next to it                                                            |
-| `NODE_ENV`            | unset                       | `production`: no localhost origins, Host must be the 8445 name, owner read from tailscale, TCP peer must be tailscaled |
-| `COMMONS_OWNER_LOGIN` | from `tailscale status`     | override the owner's tailnet login (never commit it)                                                                   |
-| `COMMONS_PUBLIC_HOST` | the 8445 host in production | the `Host` that identity routes require                                                                                |
+| Variable              | Default                          | Notes                                                                                                                  |
+| --------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `COMMONS_PORT`        | `8790`                           | 8787/8788/8080/8200 are taken on server-pc                                                                             |
+| `COMMONS_HOST`        | `127.0.0.1`                      | loopback only; the identity headers are trusted only because of this                                                   |
+| `COMMONS_DB_PATH`     | `data/commons.db`                | `data/` is gitignored; `identity.json` is cached next to it                                                            |
+| `NODE_ENV`            | unset                            | `production`: no localhost origins, Host must be the 8445 name, owner read from tailscale, TCP peer must be tailscaled |
+| `COMMONS_OWNER_LOGIN` | from `tailscale status`          | override the owner's tailnet login (never commit it)                                                                   |
+| `COMMONS_PUBLIC_HOST` | the 8445 host in production      | the `Host` that identity routes require                                                                                |
+| `COMMONS_ARCH_PATH`   | `D:\hub\state\architecture.json` | `server-map`: the hub's architecture map, read-only                                                                    |
 
 ## Database
 
@@ -115,16 +116,16 @@ add a new one.
 
 Deployed 2026-11-25 at Ve's request. **Tailnet only, never Funnel.**
 
-|                 |                                                                                                                                                                                  |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Service         | NSSM `commons-api`, automatic start (runs at boot without a logon), LocalSystem                                                                                                  |
-| Runs            | `node.exe --enable-source-maps --max-semi-space-size=1 --max-old-space-size=96 --v8-pool-size=1 D:\services\commons-api\dist\index.js`                                           |
-| Env             | `NODE_ENV=production`, `COMMONS_PORT=8790`, `COMMONS_HOST=127.0.0.1`, `COMMONS_DB_PATH=D:\services\commons-api\data\commons.db`                                                  |
-| Listens         | `127.0.0.1:8790` only                                                                                                                                                            |
-| Public face     | `https://server-pc.tail0e4194.ts.net:8445/` via `tailscale serve`, tailnet only: `/` = `D:\services\commons-web` (private front-end build), `/api` = `http://127.0.0.1:8790/api` |
-| Data            | `D:\services\commons-api\data\commons.db` (+ `identity.json`, the owner-login cache). Never in the repo                                                                          |
-| Logs            | `D:\services\logs\commons-api.out.log` and `commons-api.err.log` (rotated at 10 MB)                                                                                              |
-| Deployed commit | `D:\services\commons-api\DEPLOYED.txt`                                                                                                                                           |
+|                 |                                                                                                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service         | NSSM `commons-api`, automatic start (runs at boot without a logon), LocalSystem                                                                                                     |
+| Runs            | `node.exe --enable-source-maps --max-semi-space-size=1 --max-old-space-size=96 --v8-pool-size=1 D:\services\commons-api\dist\index.js`                                              |
+| Env             | `NODE_ENV=production`, `COMMONS_PORT=8790`, `COMMONS_HOST=127.0.0.1`, `COMMONS_DB_PATH=D:\services\commons-api\data\commons.db`, `COMMONS_ARCH_PATH=D:\hub\state\architecture.json` |
+| Listens         | `127.0.0.1:8790` only                                                                                                                                                               |
+| Public face     | `https://server-pc.tail0e4194.ts.net:8445/` via `tailscale serve`, tailnet only: `/` = `D:\services\commons-web` (private front-end build), `/api` = `http://127.0.0.1:8790/api`    |
+| Data            | `D:\services\commons-api\data\commons.db` (+ `identity.json`, the owner-login cache). Never in the repo                                                                             |
+| Logs            | `D:\services\logs\commons-api.out.log` and `commons-api.err.log` (rotated at 10 MB)                                                                                                 |
+| Deployed commit | `D:\services\commons-api\DEPLOYED.txt`                                                                                                                                              |
 
 The `/api` proxy target keeps the `/api` path on purpose: with a bare
 `http://127.0.0.1:8790` target, `--set-path=/api` strips the mount and the

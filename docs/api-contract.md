@@ -147,6 +147,37 @@ come first.
 - What sits under that prefix is up to each app; document it in the app's
   folder in both repos.
 
+### `server-map`: `GET /api/apps/server-map/architecture` (owner only)
+
+The live server architecture map. The ops hub writes it to a file on server-pc
+(`COMMONS_ARCH_PATH`, default `D:\hub\state\architecture.json`); the API
+returns that file **as is**, read-only, never writing it.
+
+- `200`, `Content-Type: application/json`, `Cache-Control: no-store`: the map
+  (schema v1, below).
+- Errors (also `Cache-Control: no-store`; never a file path or file system
+  message):
+
+  | Status | Body                                        | When                                                                          |
+  | ------ | ------------------------------------------- | ----------------------------------------------------------------------------- |
+  | `503`  | `{ "ok": false, "error": "map_not_ready" }` | the file does not exist yet (or cannot be read right now)                     |
+  | `502`  | `{ "ok": false, "error": "map_invalid" }`   | not valid JSON, `schema` is not `1`, `nodes`/`edges` not arrays, or over 1 MB |
+
+  Identity errors (see Security) come first.
+
+Schema v1 (a shared contract between the hub and the front end; the API checks
+only the top level: `schema === 1`, `nodes` and `edges` arrays):
+
+```
+{
+  schema: 1, generatedAt, host, layers: [...],
+  nodes: [{ id, kind, layer, name, description?, status, statusDetail?, details: {}, links: [], documented, group? }],
+  edges: [{ from, to, kind, label? }],
+  drift: [{ nodeId?, message }],
+  sources: [{ name, ok, error? }]
+}
+```
+
 ## Key-value storage
 
 - Each app gets a key-value store on the server, scoped to its id (JSON values).
@@ -155,4 +186,5 @@ come first.
 
 ## Errors
 
-Every error body is JSON: `{ "error": "<code>" }`, with the codes above.
+Every error body is JSON: `{ "error": "<code>" }`, with the codes above. App
+endpoints may add `"ok": false` (the `server-map` errors do).
