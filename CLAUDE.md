@@ -70,5 +70,12 @@ working on that app.
   check, auto-rollback). Roll back with `npm run deploy -- -Rollback`.
 - Never `tailscale serve reset` / `funnel reset`, never put 8445 on Funnel, never
   touch another port's handlers or other services on the box.
+- **8445 is shared with the ops hub.** Commons owns `/` and `/api`; the hub
+  (`vekbui96/ops-hub`, `D:\hub`) owns `/ops` (`D:\hub\dashboard\dist`) and
+  `/ops/api` (`http://127.0.0.1:8446`, its action server): the Ops tab. Never
+  reset or clear the 8445 serve config: change only `/` and `/api`, one path
+  at a time (`--set-path=…`), never `serve --https=8445 off` (it drops the
+  whole port, hub handlers included). After any serve change, `serve status`
+  must still list all four. Keep `/ops` free in the API and the front end.
 - Every GitHub comment an agent posts as vekbui96 starts with `<!-- claude-agent -->`
   on its own line.

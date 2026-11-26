@@ -131,6 +131,22 @@ Deployed 2026-11-25 at Ve's request. **Tailnet only, never Funnel.**
 | Logs            | `D:\services\logs\commons-api.out.log` and `commons-api.err.log` (rotated at 10 MB)                                                                                                 |
 | Deployed commit | `D:\services\commons-api\DEPLOYED.txt`                                                                                                                                              |
 
+**8445 is shared with the ops hub.** The full handler set on 8445:
+
+| Path       | Target                      | Owner                                               |
+| ---------- | --------------------------- | --------------------------------------------------- |
+| `/`        | `D:\services\commons-web`   | Commons (`npm run deploy -- -Serve`)                |
+| `/api`     | `http://127.0.0.1:8790/api` | Commons (`npm run deploy -- -Serve`)                |
+| `/ops`     | `D:\hub\dashboard\dist`     | ops hub (`vekbui96/ops-hub`, `D:\hub`): the Ops tab |
+| `/ops/api` | `http://127.0.0.1:8446`     | ops hub: its action server                          |
+
+Serve picks the longest matching path, so `/ops/...` never reaches the Commons
+handlers and `/api/...` never reaches the hub's. **Never reset or clear the
+8445 serve config**: `-Serve` only re-adds `/` and `/api` (additive; it leaves
+`/ops` alone), and any manual change must name its path with `--set-path`.
+After any serve change, `serve status` must still list all four. Commons keeps
+`/ops` free: the API is entirely under `/api`, the front end routes by hash.
+
 The `/api` proxy target keeps the `/api` path on purpose: with a bare
 `http://127.0.0.1:8790` target, `--set-path=/api` strips the mount and the
 server would see `/health` (checked 2026-11-25).
@@ -172,10 +188,15 @@ the tailnet IP:
 Owner-only routes refuse requests from server-pc itself (`self_request`); test
 them from a phone or laptop on the tailnet.
 
-**Turn it off** (only this API's handlers; the Funnel sites and the hub stay up):
+**Turn it off** (only this API's handlers; the Funnel sites and the hub, including
+its `/ops` handlers on 8445, stay up). Remove each path on its own; never
+`serve --https=8445 off` without `--set-path`, which would take the hub's `/ops`
+handlers with it:
 
 ```powershell
-& 'C:\Program Files\Tailscale\tailscale.exe' serve --https=8445 off
+& 'C:\Program Files\Tailscale\tailscale.exe' serve --https=8445 --set-path=/api off
+& 'C:\Program Files\Tailscale\tailscale.exe' serve --https=8445 --set-path=/ off   # only if the front end goes too
+& 'C:\Program Files\Tailscale\tailscale.exe' serve status   # /ops and /ops/api must still be listed
 Stop-Service commons-api   # elevated; Set-Service commons-api -StartupType Disabled keeps it off
 ```
 

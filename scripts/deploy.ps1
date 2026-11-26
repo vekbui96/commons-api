@@ -18,7 +18,8 @@
   -Serve sets this API's two `tailscale serve` handlers on 8445 (tailnet only):
     /     -> D:\services\commons-web (the private front-end build)
     /api  -> http://127.0.0.1:8790/api (the target keeps /api; without it serve strips the mount)
-  It never resets serve/funnel and never touches another port.
+  It never resets serve/funnel and never touches another port. It is additive:
+  the ops hub's /ops and /ops/api handlers on 8445 (vekbui96/ops-hub) stay.
 
 .EXAMPLE
   npm run deploy                       # verify, build, deploy, health check
