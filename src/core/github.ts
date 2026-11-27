@@ -1,4 +1,5 @@
 /**
+ * Shared core feature (used by the profiles and nfc-controls apps through ../../core).
  * Writes one file to a GitHub repo through the contents API. The token is only
  * ever put in the Authorization header: never logged, stored or returned, and
  * errors carry a code (and the HTTP status) only, never GitHub's message.

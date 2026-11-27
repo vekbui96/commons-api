@@ -25,7 +25,8 @@
   npm run deploy                       # verify, build, deploy, health check
   npm run deploy -- -Serve             # also (re)apply the 8445 serve handlers
   npm run deploy -- -Rollback          # put dist.prev back and restart
-  npm run deploy -- -SetProfilesToken  # prompt for COMMONS_PROFILES_TOKEN, keep it on the service, restart
+  npm run deploy -- -SetSecret COMMONS_NFC_BACKUP_TOKEN  # prompt for an allowlisted secret, keep it on the service, restart
+  npm run deploy -- -SetProfilesToken  # the same as -SetSecret COMMONS_PROFILES_TOKEN
 
   Every deploy keeps extra service variables it does not manage (such as
   COMMONS_PROFILES_TOKEN) and prints variable names only, never values.
@@ -33,6 +34,8 @@
 param(
   [switch]$Rollback,
   [switch]$SetProfilesToken,
+  [ValidateSet('COMMONS_PROFILES_TOKEN', 'COMMONS_NFC_BACKUP_TOKEN')]
+  [string]$SetSecret,
   [switch]$Serve,
   [switch]$SkipVerify,
   [switch]$AllowDirty,
@@ -49,6 +52,9 @@ $webDir = 'D:\services\commons-web'
 $logDir = 'D:\services\logs'
 $port = 8790
 $healthUrl = "http://127.0.0.1:$port/api/health"
+# nfc-controls hand-off files, shared with the public gateway (vekbui96/commons-public, D:\services\commons-public).
+$nfcSnapshot = 'D:\services\commons-public\snapshot\public-tags.json'
+$nfcPublicDb = 'D:\services\commons-public\data\public.db'
 
 function PrevName([string]$f) { $f -replace '\.(json|txt)$', '.prev.$1' }
 function Say([string]$msg) { Write-Host "== $msg" -ForegroundColor Cyan }
@@ -119,7 +125,8 @@ function Install-Service {
   $managed = @(
     'NODE_ENV=production', "COMMONS_PORT=$port", 'COMMONS_HOST=127.0.0.1',
     "COMMONS_DB_PATH=$(Join-Path $Target 'data\commons.db')",
-    'COMMONS_ARCH_PATH=D:\hub\state\architecture.json'
+    'COMMONS_ARCH_PATH=D:\hub\state\architecture.json',
+    "COMMONS_NFC_SNAPSHOT_PATH=$nfcSnapshot", "COMMONS_NFC_PUBLIC_DB=$nfcPublicDb"
   )
   Set-ServiceEnv $managed
 }
@@ -144,20 +151,20 @@ function Set-ServiceEnv([string[]]$entries) {
   Write-ServiceEnv (@($entries) + $kept)
 }
 
-function Set-ProfilesToken {
+function Set-Secret([string]$name) {
   # Prompts (never a parameter): the value stays out of history, scrollback and transcripts.
   if (-not (Get-Service $service -ErrorAction SilentlyContinue)) { Fail "service $service is not installed; deploy first" }
-  $secure = Read-Host -AsSecureString -Prompt 'COMMONS_PROFILES_TOKEN (Enter alone removes it)'
+  $secure = Read-Host -AsSecureString -Prompt "$name (Enter alone removes it)"
   $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-  try { $token = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr).Trim() }
+  try { $value = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr).Trim() }
   finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
-  if ($token -match '\s') { Fail 'the token contains whitespace' }
-  $all = @(Get-ServiceEnv | Where-Object { ($_ -split '=', 2)[0] -ne 'COMMONS_PROFILES_TOKEN' })
-  if ($token) { $all += "COMMONS_PROFILES_TOKEN=$token" }
-  $token = $null
+  if ($value -match '\s') { Fail "$name contains whitespace" }
+  $all = @(Get-ServiceEnv | Where-Object { ($_ -split '=', 2)[0] -ne $name })
+  if ($value) { $all += "$name=$value" }
+  $value = $null
   Write-ServiceEnv $all
   Stop-Api
-  if (-not (Restart-Api 'profiles token')) { Fail "$healthUrl is not healthy after the restart; see $logDir\commons-api.err.log" }
+  if (-not (Restart-Api "secret $name")) { Fail "$healthUrl is not healthy after the restart; see $logDir\commons-api.err.log" }
 }
 
 function Set-Serve {
@@ -205,7 +212,8 @@ function Invoke-Rollback {
 }
 
 if ($Rollback) { Invoke-Rollback; exit 0 }
-if ($SetProfilesToken) { Set-ProfilesToken; exit 0 }
+if ($SetProfilesToken) { Set-Secret 'COMMONS_PROFILES_TOKEN'; exit 0 }
+if ($SetSecret) { Set-Secret $SetSecret; exit 0 }
 
 # ---------------------------------------------------------------- build
 Set-Location $repo

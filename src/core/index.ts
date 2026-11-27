@@ -7,3 +7,6 @@
 export { defineAppRouter } from "./apps";
 export type { AppContext, AppRouterFactory } from "./apps";
 export type { AppKv } from "./kv";
+// Shared feature: write one file to a GitHub repo (profiles and nfc-controls publish this way).
+export { pagesUrl, PublishError, putFile, REPO_PATTERN } from "./github";
+export type { PublishErrorCode, PublishTarget, PutResult } from "./github";

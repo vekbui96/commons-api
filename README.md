@@ -27,11 +27,12 @@ commons-api/
 │  │  ├─ security.ts    origin allowlist, owner identity, CSRF on writes
 │  │  ├─ tailscale.ts   owner login + tailnet IPs from tailscale, tailscaled peer check
 │  │  └─ index.ts       the public interface apps import
-│  └─ apps/<id>/        an app's backend: routes.ts, CLAUDE.md, tests (server-map, profiles)
+│  │  ├─ github.ts      shared: write one file to a GitHub repo (profiles, nfc-controls)
+│  └─ apps/<id>/        an app's backend: routes.ts, CLAUDE.md, tests (server-map, profiles, nfc-controls)
 ├─ eslint/              local lint rule: the wall between apps
 ├─ scripts/             check-app.ps1 (one app), build.mjs (dist/), deploy.ps1
 ├─ test/                server tests, lint-rule tests, a fixture app
-└─ docs/                api-contract.md, templates/app-CLAUDE.md
+└─ docs/                api-contract.md, nfc-controls-contract.md, templates/app-CLAUDE.md
 ```
 
 - Apps never open their own port, database or process.
@@ -97,17 +98,22 @@ PowerShell script (`scripts/check-app.ps1`), for this Windows box.
 
 ## Config (environment variables)
 
-| Variable                 | Default                          | Notes                                                                                                                                                                                               |
-| ------------------------ | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `COMMONS_PORT`           | `8790`                           | 8787/8788/8080/8200 are taken on server-pc                                                                                                                                                          |
-| `COMMONS_HOST`           | `127.0.0.1`                      | loopback only; the identity headers are trusted only because of this                                                                                                                                |
-| `COMMONS_DB_PATH`        | `data/commons.db`                | `data/` is gitignored; `identity.json` is cached next to it                                                                                                                                         |
-| `NODE_ENV`               | unset                            | `production`: no localhost origins, Host must be the 8445 name, owner read from tailscale, TCP peer must be tailscaled                                                                              |
-| `COMMONS_OWNER_LOGIN`    | from `tailscale status`          | override the owner's tailnet login (never commit it)                                                                                                                                                |
-| `COMMONS_PUBLIC_HOST`    | the 8445 host in production      | the `Host` that identity routes require                                                                                                                                                             |
-| `COMMONS_ARCH_PATH`      | `D:\hub\state\architecture.json` | `server-map`: the hub's architecture map, read-only                                                                                                                                                 |
-| `COMMONS_PROFILES_REPO`  | `vekbui96/commons-profiles`      | `profiles`: the repo `POST /publish` writes `profiles.json` to (branch `main`)                                                                                                                      |
-| `COMMONS_PROFILES_TOKEN` | unset                            | `profiles`: **secret**, fine-grained GitHub token (Contents read/write on that repo only). Unset: publish answers `503`. Set with `npm run deploy -- -SetProfilesToken` (elevated); deploys keep it |
+| Variable                       | Default                                   | Notes                                                                                                                                                                                               |
+| ------------------------------ | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `COMMONS_PORT`                 | `8790`                                    | 8787/8788/8080/8200 are taken on server-pc                                                                                                                                                          |
+| `COMMONS_HOST`                 | `127.0.0.1`                               | loopback only; the identity headers are trusted only because of this                                                                                                                                |
+| `COMMONS_DB_PATH`              | `data/commons.db`                         | `data/` is gitignored; `identity.json` is cached next to it                                                                                                                                         |
+| `NODE_ENV`                     | unset                                     | `production`: no localhost origins, Host must be the 8445 name, owner read from tailscale, TCP peer must be tailscaled                                                                              |
+| `COMMONS_OWNER_LOGIN`          | from `tailscale status`                   | override the owner's tailnet login (never commit it)                                                                                                                                                |
+| `COMMONS_PUBLIC_HOST`          | the 8445 host in production               | the `Host` that identity routes require                                                                                                                                                             |
+| `COMMONS_ARCH_PATH`            | `D:\hub\state\architecture.json`          | `server-map`: the hub's architecture map, read-only                                                                                                                                                 |
+| `COMMONS_PROFILES_REPO`        | `vekbui96/commons-profiles`               | `profiles`: the repo `POST /publish` writes `profiles.json` to (branch `main`)                                                                                                                      |
+| `COMMONS_PROFILES_TOKEN`       | unset                                     | `profiles`: **secret**, fine-grained GitHub token (Contents read/write on that repo only). Unset: publish answers `503`. Set with `npm run deploy -- -SetProfilesToken` (elevated); deploys keep it |
+| `COMMONS_NFC_SNAPSHOT_PATH`    | unset (no snapshot)                       | `nfc-controls`: where it writes the public-tag snapshot for the gateway. Deploy sets `D:\services\commons-public\snapshot\public-tags.json`                                                         |
+| `COMMONS_NFC_PUBLIC_DB`        | unset (no import)                         | `nfc-controls`: the gateway's `public.db`, opened read-only, rows treated as untrusted. Deploy sets `D:\services\commons-public\data\public.db`                                                     |
+| `COMMONS_NFC_PUBLIC_LINK_BASE` | `https://vekbui96.github.io/commons/#/t/` | `nfc-controls`: the start of every tag link                                                                                                                                                         |
+| `COMMONS_NFC_BACKUP_REPO`      | `vekbui96/commons-nfc-tags`               | `nfc-controls`: the public repo the encrypted backup `tags.json` goes to (branch `main`, served by Pages)                                                                                           |
+| `COMMONS_NFC_BACKUP_TOKEN`     | unset                                     | `nfc-controls`: **secret**, fine-grained GitHub token (Contents read/write on that repo only). Unset: no backup copy. Set with `npm run deploy -- -SetSecret COMMONS_NFC_BACKUP_TOKEN` (elevated)   |
 
 ## Database
 
@@ -120,31 +126,32 @@ add a new one.
 
 Deployed 2026-11-25 at Ve's request. **Tailnet only, never Funnel.**
 
-|                 |                                                                                                                                                                                     |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Service         | NSSM `commons-api`, automatic start (runs at boot without a logon), LocalSystem                                                                                                     |
-| Runs            | `node.exe --enable-source-maps --max-semi-space-size=1 --max-old-space-size=96 --v8-pool-size=1 D:\services\commons-api\dist\index.js`                                              |
-| Env             | `NODE_ENV=production`, `COMMONS_PORT=8790`, `COMMONS_HOST=127.0.0.1`, `COMMONS_DB_PATH=D:\services\commons-api\data\commons.db`, `COMMONS_ARCH_PATH=D:\hub\state\architecture.json` |
-| Listens         | `127.0.0.1:8790` only                                                                                                                                                               |
-| Public face     | `https://server-pc.tail0e4194.ts.net:8445/` via `tailscale serve`, tailnet only: `/` = `D:\services\commons-web` (private front-end build), `/api` = `http://127.0.0.1:8790/api`    |
-| Data            | `D:\services\commons-api\data\commons.db` (+ `identity.json`, the owner-login cache). Never in the repo                                                                             |
-| Logs            | `D:\services\logs\commons-api.out.log` and `commons-api.err.log` (rotated at 10 MB)                                                                                                 |
-| Deployed commit | `D:\services\commons-api\DEPLOYED.txt`                                                                                                                                              |
+|                 |                                                                                                                                                                                                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Service         | NSSM `commons-api`, automatic start (runs at boot without a logon), LocalSystem                                                                                                                                                                                                     |
+| Runs            | `node.exe --enable-source-maps --max-semi-space-size=1 --max-old-space-size=96 --v8-pool-size=1 D:\services\commons-api\dist\index.js`                                                                                                                                              |
+| Env             | `NODE_ENV=production`, `COMMONS_PORT=8790`, `COMMONS_HOST=127.0.0.1`, `COMMONS_DB_PATH=D:\services\commons-api\data\commons.db`, `COMMONS_ARCH_PATH=D:\hub\state\architecture.json`, `COMMONS_NFC_SNAPSHOT_PATH`, `COMMONS_NFC_PUBLIC_DB` (both under `D:\services\commons-public`) |
+| Listens         | `127.0.0.1:8790` only                                                                                                                                                                                                                                                               |
+| Public face     | `https://server-pc.tail0e4194.ts.net:8445/` via `tailscale serve`, tailnet only: `/` = `D:\services\commons-web` (private front-end build), `/api` = `http://127.0.0.1:8790/api`                                                                                                    |
+| Data            | `D:\services\commons-api\data\commons.db` (+ `identity.json`, the owner-login cache). Never in the repo                                                                                                                                                                             |
+| Logs            | `D:\services\logs\commons-api.out.log` and `commons-api.err.log` (rotated at 10 MB)                                                                                                                                                                                                 |
+| Deployed commit | `D:\services\commons-api\DEPLOYED.txt`                                                                                                                                                                                                                                              |
 
 **8445 is shared with the ops hub.** The full handler set on 8445:
 
-| Path       | Target                      | Owner                                               |
-| ---------- | --------------------------- | --------------------------------------------------- |
-| `/`        | `D:\services\commons-web`   | Commons (`npm run deploy -- -Serve`)                |
-| `/api`     | `http://127.0.0.1:8790/api` | Commons (`npm run deploy -- -Serve`)                |
-| `/ops`     | `D:\hub\dashboard\dist`     | ops hub (`vekbui96/ops-hub`, `D:\hub`): the Ops tab |
-| `/ops/api` | `http://127.0.0.1:8446`     | ops hub: its action server                          |
+| Path       | Target                      | Owner                                                                                                                       |
+| ---------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `/`        | `D:\services\commons-web`   | Commons (`npm run deploy -- -Serve`)                                                                                        |
+| `/api`     | `http://127.0.0.1:8790/api` | Commons (`npm run deploy -- -Serve`)                                                                                        |
+| `/nfc`     | `D:\services\nfc-web`       | Commons: the `<nfc-controls>` MFE (`vekbui96/nfc-controls`); added by the main session with `--set-path=/nfc` when it ships |
+| `/ops`     | `D:\hub\dashboard\dist`     | ops hub (`vekbui96/ops-hub`, `D:\hub`): the Ops tab                                                                         |
+| `/ops/api` | `http://127.0.0.1:8446`     | ops hub: its action server                                                                                                  |
 
 Serve picks the longest matching path, so `/ops/...` never reaches the Commons
 handlers and `/api/...` never reaches the hub's. **Never reset or clear the
 8445 serve config**: `-Serve` only re-adds `/` and `/api` (additive; it leaves
 `/ops` alone), and any manual change must name its path with `--set-path`.
-After any serve change, `serve status` must still list all four. Commons keeps
+After any serve change, `serve status` must still list all of them (four, five once `/nfc` is added). Commons keeps
 `/ops` free: the API is entirely under `/api`, the front end routes by hash.
 
 The `/api` proxy target keeps the `/api` path on purpose: with a bare
@@ -169,8 +176,9 @@ they differ), restarts and health-checks; the failed build stays in `dist.bad`.
 Deploy and rollback never touch the database; migrations are append-only, so an
 older build still opens it.
 
-**Secrets:** `npm run deploy -- -SetProfilesToken` (elevated) prompts for
-`COMMONS_PROFILES_TOKEN`, stores it in the service's `AppEnvironmentExtra`
+**Secrets:** `npm run deploy -- -SetSecret <NAME>` (elevated; `NAME` is
+`COMMONS_PROFILES_TOKEN` or `COMMONS_NFC_BACKUP_TOKEN`; `-SetProfilesToken`
+still works) prompts for the value, stores it in the service's `AppEnvironmentExtra`
 (keeping the other variables) and restarts. Every deploy keeps extra variables
 it does not manage and prints variable names only, never values.
 
@@ -205,4 +213,15 @@ Funnel share one config; a reset takes the public sites down), never put 8445
 on Funnel, and never touch another port (443, 8443, 8444, 8446 and 8460-8464
 belong to other services).
 
-Still to do: add `data\commons.db` to the nightly off-machine backup.
+## NFC controls and the public gateway
+
+The `nfc-controls` app is the private editor for NFC tags. Tags run for anyone through a
+**separate** public gateway, `vekbui96/commons-public` (NSSM `commons-public`,
+`127.0.0.1:8792`, Funnel :10000, low-privilege account). The two processes share no
+database, HTTP route or secret: commons-api writes the snapshot file and reads the
+gateway's `public.db` read-only (contract: `docs/nfc-controls-contract.md`). This API
+stays tailnet only. An encrypted static backup of link and note tags goes to
+`vekbui96/commons-nfc-tags` (GitHub Pages) when `COMMONS_NFC_BACKUP_TOKEN` is set.
+
+Still to do: add `data\commons.db` (and the gateway's `public.db`, low value) to the
+nightly off-machine backup.

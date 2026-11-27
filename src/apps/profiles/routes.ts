@@ -1,6 +1,13 @@
 import { Router, type Response } from "express";
-import { defineAppRouter, type AppKv } from "../../core";
-import { pagesUrl, PublishError, putFile, REPO_PATTERN, type PublishTarget } from "./github";
+import {
+  defineAppRouter,
+  pagesUrl,
+  PublishError,
+  putFile,
+  REPO_PATTERN,
+  type AppKv,
+  type PublishTarget,
+} from "../../core";
 import {
   cleanContent,
   contentKey,

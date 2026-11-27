@@ -76,6 +76,11 @@ working on that app.
   reset or clear the 8445 serve config: change only `/` and `/api`, one path
   at a time (`--set-path=…`), never `serve --https=8445 off` (it drops the
   whole port, hub handlers included). After any serve change, `serve status`
-  must still list all four. Keep `/ops` free in the API and the front end.
+  must still list all of them (four; five once the main session adds `/nfc`,
+  the nfc-controls MFE). Keep `/ops` free in the API and the front end.
+- **The NFC public gateway is not this API.** It is `vekbui96/commons-public`
+  (`D:\projects\commons-public`, NSSM `commons-public`, 8792, Funnel :10000).
+  Never mount public routes here; the `nfc-controls` app only writes its
+  snapshot file and reads its `public.db` read-only.
 - Every GitHub comment an agent posts as vekbui96 starts with `<!-- claude-agent -->`
   on its own line.
