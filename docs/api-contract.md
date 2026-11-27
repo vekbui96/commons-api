@@ -317,6 +317,13 @@ the commit live in the API's publish status, not the file.
 
 `problems` strings are for display, not for matching.
 
+### `nfc-controls`: NFC tag editor (owner only)
+
+The editor half of NFC controls lives at `/api/apps/nfc-controls/`. Its full contract,
+including the public gateway `commons-public` and the static backup copy, is
+[`docs/nfc-controls-contract.md`](nfc-controls-contract.md), identical in every repo
+that uses it. The public gateway is a separate process and never part of this API.
+
 ## Key-value storage
 
 - Each app gets a key-value store on the server, scoped to its id (JSON values).
